@@ -1,3 +1,5 @@
 ingestion/data/
 .claude
 SPEC.md
+.env
+.server.pid

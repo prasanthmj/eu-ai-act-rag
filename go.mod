@@ -4,6 +4,8 @@ go 1.24.0
 
 require (
 	github.com/PuerkitoBio/goquery v1.11.0
+	github.com/go-chi/chi/v5 v5.2.5
+	github.com/gomcpgo/mcp v0.1.1
 	github.com/google/uuid v1.6.0
 	github.com/openai/openai-go v1.12.0
 	github.com/qdrant/go-client v1.17.1
