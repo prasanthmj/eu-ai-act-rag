@@ -56,8 +56,11 @@ func (p *Pipeline) RunFull(ctx context.Context, description, domainHint string) 
 
 	// Stage 4: Score confidence
 	log.Println("Pipeline stage 4: Scoring confidence...")
-	scorer := Score(classification, chunks, mapper)
-	log.Printf("Confidence: %.0f%%", scorer.OverallConfidence)
+	scorer, err := Score(ctx, p.llmClient, classification, chunks, mapper)
+	if err != nil {
+		return nil, fmt.Errorf("stage 4 (score): %w", err)
+	}
+	log.Printf("Confidence: %.0f%%, citation accuracy: %.0f%%", scorer.OverallConfidence, scorer.CitationAccuracy)
 
 	// Stage 5: Generate checklist
 	log.Println("Pipeline stage 5: Generating checklist...")

@@ -35,10 +35,21 @@ type MapperResult struct {
 	Obligations         []Obligation `json:"obligations"`
 }
 
+// ObligationVerification is the LLM's assessment of a single obligation claim.
+type ObligationVerification struct {
+	Article string `json:"article"`
+	Status  string `json:"status"` // "verified", "partially_verified", "unverified"
+	Reason  string `json:"reason"`
+}
+
 // ScorerResult is the output of Stage 4 (Confidence Scorer).
 type ScorerResult struct {
-	OverallConfidence float64  `json:"overall_confidence"`
-	AmbiguityFlags   []string `json:"ambiguity_flags"`
+	OverallConfidence      float64                  `json:"overall_confidence"`
+	ClassificationVerified bool                     `json:"classification_verified"`
+	ClassificationReason   string                   `json:"classification_reason"`
+	Verifications          []ObligationVerification `json:"verifications"`
+	CitationAccuracy       float64                  `json:"citation_accuracy"`
+	AmbiguityFlags         []string                 `json:"ambiguity_flags"`
 }
 
 // PipelineResult is the complete output of all 5 stages.

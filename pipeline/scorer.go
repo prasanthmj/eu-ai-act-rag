@@ -1,86 +1,62 @@
 package pipeline
 
-// Score runs Stage 4: computes a heuristic confidence score (no LLM call).
-func Score(classification *ClassifyResult, chunks []RetrievedChunk, mapper *MapperResult) *ScorerResult {
-	result := &ScorerResult{}
+import (
+	"context"
+	"fmt"
+	"strings"
 
-	// Factor 1: Average annex similarity score (Hop 1 results)
-	var annexScoreSum float64
-	var annexCount int
-	for _, c := range chunks {
-		if c.Hop == 1 && c.Score > 0 {
-			annexScoreSum += float64(c.Score)
-			annexCount++
-		}
-	}
-	avgAnnexScore := 0.0
-	if annexCount > 0 {
-		avgAnnexScore = annexScoreSum / float64(annexCount)
-	}
+	"github.com/prasanthmj/eu-ai-act-rag/llm"
+)
 
-	// Factor 2: Strong Annex III match (any hop-1 score > 0.75)
-	hasStrongMatch := false
-	for _, c := range chunks {
-		if c.Hop == 1 && c.Score > 0.75 {
-			hasStrongMatch = true
-			break
-		}
+// Score runs Stage 4: LLM-based verification of the classification and obligations
+// against the retrieved legal text.
+func Score(ctx context.Context, llmClient *llm.Client, classification *ClassifyResult, chunks []RetrievedChunk, mapper *MapperResult) (*ScorerResult, error) {
+	// Build the retrieved text context
+	var chunkTexts []string
+	for i, c := range chunks {
+		chunkTexts = append(chunkTexts, fmt.Sprintf("[%d] %s — %s\n%s", i+1, c.DocID, c.Title, c.Content))
 	}
 
-	// Factor 3: Corroboration — how many retrieved articles back up the obligations
-	articleDocIDs := map[string]bool{}
-	for _, c := range chunks {
-		if c.Hop == 2 {
-			articleDocIDs[c.DocID] = true
-		}
-	}
-	citedArticles := 0
+	// Build the obligations summary
+	var obligationLines []string
 	for _, ob := range mapper.Obligations {
-		// Normalize "Article 9" to "article_9"
-		normalized := "article_" + extractNumber(ob.Article)
-		if articleDocIDs[normalized] {
-			citedArticles++
+		obligationLines = append(obligationLines, fmt.Sprintf("- %s (%s): %s [Priority: %s]", ob.Article, ob.Title, ob.Summary, ob.Priority))
+	}
+
+	userMsg := fmt.Sprintf(`CLASSIFICATION:
+- Domain: %s
+- Risk Tier: %s
+- Classification Basis: %s
+- Reasoning: %s
+
+MAPPED OBLIGATIONS:
+%s
+
+RETRIEVED LEGAL TEXT:
+%s`,
+		classification.Domain,
+		strings.Join(classification.RiskTiers, ", "),
+		strings.Join(mapper.ClassificationBasis, ", "),
+		classification.Reasoning,
+		strings.Join(obligationLines, "\n"),
+		strings.Join(chunkTexts, "\n\n"),
+	)
+
+	var result ScorerResult
+	if err := llmClient.CompleteJSON(ctx, scorerSystemPrompt, userMsg, &result); err != nil {
+		return nil, fmt.Errorf("score confidence: %w", err)
+	}
+
+	// Compute citation accuracy from verifications
+	if len(result.Verifications) > 0 {
+		verified := 0
+		for _, v := range result.Verifications {
+			if v.Status == "verified" {
+				verified++
+			}
 		}
-	}
-	corroboration := 0.0
-	if len(mapper.Obligations) > 0 {
-		corroboration = float64(citedArticles) / float64(len(mapper.Obligations))
+		result.CitationAccuracy = float64(verified) / float64(len(result.Verifications)) * 100
 	}
 
-	// Combine factors into 0–100 score
-	confidence := avgAnnexScore*40 + corroboration*40
-	if hasStrongMatch {
-		confidence += 20
-	}
-	if confidence > 100 {
-		confidence = 100
-	}
-	result.OverallConfidence = confidence
-
-	// Ambiguity flags
-	if classification.ExceptionCandidate {
-		result.AmbiguityFlags = append(result.AmbiguityFlags,
-			"Article 6(3) exception may apply — legal review recommended")
-	}
-	if !hasStrongMatch && len(classification.RiskTiers) > 0 && classification.RiskTiers[0] == "HIGH_RISK" {
-		result.AmbiguityFlags = append(result.AmbiguityFlags,
-			"No strong Annex III match found — classification may need review")
-	}
-
-	return result
-}
-
-// extractNumber pulls the first number from a string like "Article 9".
-func extractNumber(s string) string {
-	var num []byte
-	started := false
-	for _, c := range []byte(s) {
-		if c >= '0' && c <= '9' {
-			num = append(num, c)
-			started = true
-		} else if started {
-			break
-		}
-	}
-	return string(num)
+	return &result, nil
 }
