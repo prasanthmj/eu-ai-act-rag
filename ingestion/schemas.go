@@ -42,8 +42,9 @@ type Chunk struct {
 	LastUpdated string   `json:"last_updated"`
 }
 
-// ChunkWithEmbedding pairs a Chunk with its embedding vector.
+// ChunkWithEmbedding pairs a Chunk with its dense and sparse embedding vectors.
 type ChunkWithEmbedding struct {
-	Chunk     Chunk     `json:"chunk"`
-	Embedding []float32 `json:"embedding"`
+	Chunk     Chunk        `json:"chunk"`
+	Embedding []float32    `json:"embedding"`
+	Sparse    SparseVector `json:"sparse"`
 }

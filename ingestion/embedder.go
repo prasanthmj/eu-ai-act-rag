@@ -27,15 +27,15 @@ func NewEmbedder() *Embedder {
 	}
 }
 
-// EmbedChunks generates embeddings for all chunks and returns ChunkWithEmbeddings.
-func (e *Embedder) EmbedChunks(ctx context.Context, chunks []Chunk) ([]ChunkWithEmbedding, error) {
+// EmbedChunks generates dense and sparse embeddings for all chunks.
+func (e *Embedder) EmbedChunks(ctx context.Context, chunks []Chunk, sparseEnc *SparseEncoder) ([]ChunkWithEmbedding, error) {
 	// Prepare texts: title + content
 	texts := make([]string, len(chunks))
 	for i, c := range chunks {
 		texts[i] = c.Title + "\n\n" + c.Content
 	}
 
-	// Process in batches
+	// Process dense embeddings in batches
 	allEmbeddings := make([][]float32, len(chunks))
 
 	for start := 0; start < len(texts); start += batchSize {
@@ -56,12 +56,13 @@ func (e *Embedder) EmbedChunks(ctx context.Context, chunks []Chunk) ([]ChunkWith
 		}
 	}
 
-	// Combine chunks with embeddings
+	// Combine chunks with dense + sparse embeddings
 	results := make([]ChunkWithEmbedding, len(chunks))
 	for i, c := range chunks {
 		results[i] = ChunkWithEmbedding{
 			Chunk:     c,
 			Embedding: allEmbeddings[i],
+			Sparse:    sparseEnc.Encode(texts[i]),
 		}
 	}
 

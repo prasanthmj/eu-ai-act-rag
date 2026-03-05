@@ -41,17 +41,44 @@ func (s *Searcher) Close() error {
 	return s.client.Close()
 }
 
-// VectorSearch performs dense vector search on a collection.
-func (s *Searcher) VectorSearch(ctx context.Context, collection string, vector []float32, limit uint64) ([]SearchResult, error) {
-	lim := limit
+// SparseQuery holds sparse vector data for hybrid search.
+type SparseQuery struct {
+	Indices []uint32
+	Values  []float32
+}
+
+// HybridSearch performs dense + sparse vector search with RRF fusion.
+func (s *Searcher) HybridSearch(ctx context.Context, collection string, denseVector []float32, sparse *SparseQuery, limit uint64) ([]SearchResult, error) {
+	denseUsing := "dense"
+	sparseUsing := "sparse"
+	prefetchLimit := uint64(100)
+
+	prefetch := []*pb.PrefetchQuery{
+		{
+			Query: pb.NewQueryDense(denseVector),
+			Using: &denseUsing,
+			Limit: &prefetchLimit,
+		},
+	}
+
+	// Add sparse prefetch if we have sparse data
+	if sparse != nil && len(sparse.Indices) > 0 {
+		prefetch = append(prefetch, &pb.PrefetchQuery{
+			Query: pb.NewQuerySparse(sparse.Indices, sparse.Values),
+			Using: &sparseUsing,
+			Limit: &prefetchLimit,
+		})
+	}
+
 	points, err := s.client.Query(ctx, &pb.QueryPoints{
 		CollectionName: collection,
-		Query:          pb.NewQueryDense(vector),
-		Limit:          &lim,
+		Prefetch:       prefetch,
+		Query:          pb.NewQueryFusion(pb.Fusion_RRF),
+		Limit:          &limit,
 		WithPayload:    pb.NewWithPayload(true),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("vector search %s: %w", collection, err)
+		return nil, fmt.Errorf("hybrid search %s: %w", collection, err)
 	}
 
 	results := make([]SearchResult, len(points))

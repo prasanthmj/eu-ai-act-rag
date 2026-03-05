@@ -3,3 +3,6 @@ ingestion/data/
 SPEC.md
 .env
 .server.pid
+issues.md
+docs/*
+

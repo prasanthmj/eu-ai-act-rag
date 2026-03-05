@@ -100,26 +100,47 @@ func main() {
 		log.Fatalf("Save annex chunks: %v", err)
 	}
 
-	// Step 6: Generate embeddings
+	// Step 6: Build sparse encoder from all chunks
+	log.Println("=== Building sparse encoder (BM25) ===")
+	allChunks := make([]string, 0, len(articleChunks)+len(recitalChunks)+len(annexChunks))
+	for _, c := range articleChunks {
+		allChunks = append(allChunks, c.Title+"\n\n"+c.Content)
+	}
+	for _, c := range recitalChunks {
+		allChunks = append(allChunks, c.Title+"\n\n"+c.Content)
+	}
+	for _, c := range annexChunks {
+		allChunks = append(allChunks, c.Title+"\n\n"+c.Content)
+	}
+	sparseEnc := ingestion.NewSparseEncoder()
+	sparseEnc.Fit(allChunks)
+	log.Printf("Sparse encoder fitted on %d documents", len(allChunks))
+
+	if err := sparseEnc.Save("ingestion/data/processed/sparse_encoder.json"); err != nil {
+		log.Fatalf("Save sparse encoder: %v", err)
+	}
+	log.Println("Saved sparse encoder to ingestion/data/processed/sparse_encoder.json")
+
+	// Step 7: Generate dense + sparse embeddings
 	log.Println("=== Generating embeddings ===")
 	embedder := ingestion.NewEmbedder()
 
-	articleEmbedded, err := embedder.EmbedChunks(ctx, articleChunks)
+	articleEmbedded, err := embedder.EmbedChunks(ctx, articleChunks, sparseEnc)
 	if err != nil {
 		log.Fatalf("Embed articles: %v", err)
 	}
 
-	recitalEmbedded, err := embedder.EmbedChunks(ctx, recitalChunks)
+	recitalEmbedded, err := embedder.EmbedChunks(ctx, recitalChunks, sparseEnc)
 	if err != nil {
 		log.Fatalf("Embed recitals: %v", err)
 	}
 
-	annexEmbedded, err := embedder.EmbedChunks(ctx, annexChunks)
+	annexEmbedded, err := embedder.EmbedChunks(ctx, annexChunks, sparseEnc)
 	if err != nil {
 		log.Fatalf("Embed annexes: %v", err)
 	}
 
-	// Step 7: Connect to Qdrant and create collections
+	// Step 8: Connect to Qdrant and create collections
 	log.Println("=== Setting up Qdrant ===")
 	qdrantHost := envOrDefault("QDRANT_HOST", "localhost")
 	qdrantPort, _ := strconv.Atoi(envOrDefault("QDRANT_PORT", "6334"))
@@ -145,7 +166,7 @@ func main() {
 		}
 	}
 
-	// Step 8: Summary
+	// Step 9: Summary
 	fmt.Printf("\n=== Ingestion Complete ===\n")
 	fmt.Printf("Ingested %d articles, %d recitals, %d annexes\n",
 		len(articleChunks), len(recitalChunks), len(annexChunks))

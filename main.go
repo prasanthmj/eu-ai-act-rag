@@ -12,6 +12,7 @@ import (
 	"github.com/gomcpgo/mcp/pkg/server"
 	"github.com/openai/openai-go"
 	"github.com/prasanthmj/eu-ai-act-rag/api"
+	"github.com/prasanthmj/eu-ai-act-rag/ingestion"
 	"github.com/prasanthmj/eu-ai-act-rag/llm"
 	"github.com/prasanthmj/eu-ai-act-rag/pipeline"
 	"github.com/prasanthmj/eu-ai-act-rag/rag"
@@ -48,8 +49,23 @@ func main() {
 		return rag.EmbedQuery(ctx, openaiClient, text)
 	}
 
+	// Load sparse encoder for hybrid search
+	sparseEncPath := envOrDefault("SPARSE_ENCODER_PATH", "ingestion/data/processed/sparse_encoder.json")
+	sparseEnc, err := ingestion.LoadSparseEncoder(sparseEncPath)
+	if err != nil {
+		log.Printf("Warning: could not load sparse encoder (%v) — falling back to dense-only search", err)
+	}
+
+	var sparseEmbedFn pipeline.SparseEmbedFn
+	if sparseEnc != nil {
+		sparseEmbedFn = func(text string) *rag.SparseQuery {
+			sv := sparseEnc.Encode(text)
+			return &rag.SparseQuery{Indices: sv.Indices, Values: sv.Values}
+		}
+	}
+
 	// Create pipeline
-	p := pipeline.NewPipeline(searcher, llmClient, embedFn)
+	p := pipeline.NewPipeline(searcher, llmClient, embedFn, sparseEmbedFn)
 
 	switch *mode {
 	case "mcp":

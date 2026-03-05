@@ -12,17 +12,19 @@ import (
 
 // Pipeline orchestrates the 5-stage RAG pipeline.
 type Pipeline struct {
-	searcher  *rag.Searcher
-	llmClient *llm.Client
-	embedFn   EmbedFn
+	searcher      *rag.Searcher
+	llmClient     *llm.Client
+	embedFn       EmbedFn
+	sparseEmbedFn SparseEmbedFn
 }
 
 // NewPipeline creates a Pipeline with all dependencies.
-func NewPipeline(searcher *rag.Searcher, llmClient *llm.Client, embedFn EmbedFn) *Pipeline {
+func NewPipeline(searcher *rag.Searcher, llmClient *llm.Client, embedFn EmbedFn, sparseEmbedFn SparseEmbedFn) *Pipeline {
 	return &Pipeline{
-		searcher:  searcher,
-		llmClient: llmClient,
-		embedFn:   embedFn,
+		searcher:      searcher,
+		llmClient:     llmClient,
+		embedFn:       embedFn,
+		sparseEmbedFn: sparseEmbedFn,
 	}
 }
 
@@ -38,7 +40,7 @@ func (p *Pipeline) RunFull(ctx context.Context, description, domainHint string) 
 
 	// Stage 2: Retrieve
 	log.Println("Pipeline stage 2: Retrieving relevant legal text...")
-	chunks, err := Retrieve(ctx, p.searcher, p.embedFn, classification, description)
+	chunks, err := Retrieve(ctx, p.searcher, p.embedFn, p.sparseEmbedFn, classification, description)
 	if err != nil {
 		return nil, fmt.Errorf("stage 2 (retrieve): %w", err)
 	}
@@ -85,7 +87,7 @@ func (p *Pipeline) GetObligations(ctx context.Context, riskTier, domain string) 
 	}
 
 	description := fmt.Sprintf("%s AI system in %s domain", riskTier, domain)
-	chunks, err := Retrieve(ctx, p.searcher, p.embedFn, classification, description)
+	chunks, err := Retrieve(ctx, p.searcher, p.embedFn, p.sparseEmbedFn, classification, description)
 	if err != nil {
 		return nil, fmt.Errorf("retrieve for obligations: %w", err)
 	}

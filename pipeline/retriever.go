@@ -15,25 +15,33 @@ const (
 	recitalCollection  = "eu_ai_act_recitals"
 )
 
-// EmbedFn is a function that embeds a query string into a vector.
+// EmbedFn is a function that embeds a query string into a dense vector.
 type EmbedFn func(ctx context.Context, text string) ([]float32, error)
 
+// SparseEmbedFn is a function that encodes a query into a sparse vector.
+type SparseEmbedFn func(text string) *rag.SparseQuery
+
 // Retrieve runs Stage 2: multi-hop retrieval from Qdrant.
-// Hop 1: search annexes, Hop 2: follow cross_refs to articles, Hop 3: follow to recitals.
-func Retrieve(ctx context.Context, searcher *rag.Searcher, embedFn EmbedFn, classification *ClassifyResult, description string) ([]RetrievedChunk, error) {
+// Hop 1: hybrid search annexes, Hop 2: follow cross_refs to articles, Hop 3: follow to recitals.
+func Retrieve(ctx context.Context, searcher *rag.Searcher, embedFn EmbedFn, sparseEmbedFn SparseEmbedFn, classification *ClassifyResult, description string) ([]RetrievedChunk, error) {
 	// Build search query from description + classification context
 	query := description
 	if classification.Domain != "" && classification.Domain != "unknown" {
 		query = fmt.Sprintf("%s (domain: %s, risk: %s)", description, classification.Domain, strings.Join(classification.RiskTiers, ", "))
 	}
 
-	// Hop 1: Vector search annexes
+	// Hop 1: Hybrid search annexes (dense + sparse)
 	vector, err := embedFn(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("embed query: %w", err)
 	}
 
-	annexResults, err := searcher.VectorSearch(ctx, annexCollection, vector, 5)
+	var sparse *rag.SparseQuery
+	if sparseEmbedFn != nil {
+		sparse = sparseEmbedFn(query)
+	}
+
+	annexResults, err := searcher.HybridSearch(ctx, annexCollection, vector, sparse, 5)
 	if err != nil {
 		return nil, fmt.Errorf("hop 1 (annexes): %w", err)
 	}

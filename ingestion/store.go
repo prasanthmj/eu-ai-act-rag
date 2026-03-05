@@ -34,36 +34,48 @@ func (s *Store) Close() error {
 	return s.client.Close()
 }
 
-// RecreateCollection deletes (if exists) and creates a collection with cosine distance.
+// RecreateCollection deletes (if exists) and creates a collection with named dense + sparse vectors.
 func (s *Store) RecreateCollection(ctx context.Context, name string) error {
 	// Delete existing collection (ignore errors if it doesn't exist)
 	_ = s.client.DeleteCollection(ctx, name)
 
 	err := s.client.CreateCollection(ctx, &pb.CreateCollection{
 		CollectionName: name,
-		VectorsConfig: pb.NewVectorsConfig(&pb.VectorParams{
-			Size:     vectorSize,
-			Distance: pb.Distance_Cosine,
+		VectorsConfig: pb.NewVectorsConfigMap(map[string]*pb.VectorParams{
+			"dense": {
+				Size:     vectorSize,
+				Distance: pb.Distance_Cosine,
+			},
+		}),
+		SparseVectorsConfig: pb.NewSparseVectorsConfig(map[string]*pb.SparseVectorParams{
+			"sparse": {},
 		}),
 	})
 	if err != nil {
 		return fmt.Errorf("create collection %s: %w", name, err)
 	}
 
-	log.Printf("Created collection: %s", name)
+	log.Printf("Created collection: %s (dense + sparse vectors)", name)
 	return nil
 }
 
-// UpsertChunks stores ChunkWithEmbeddings as Qdrant points.
+// UpsertChunks stores ChunkWithEmbeddings as Qdrant points with named dense + sparse vectors.
 func (s *Store) UpsertChunks(ctx context.Context, collection string, chunks []ChunkWithEmbedding) error {
 	points := make([]*pb.PointStruct, len(chunks))
 
 	for i, cwe := range chunks {
 		pointID := deterministicUUID(cwe.Chunk.DocID)
 
+		vectors := map[string]*pb.Vector{
+			"dense": pb.NewVectorDense(cwe.Embedding),
+		}
+		if len(cwe.Sparse.Indices) > 0 {
+			vectors["sparse"] = pb.NewVectorSparse(cwe.Sparse.Indices, cwe.Sparse.Values)
+		}
+
 		points[i] = &pb.PointStruct{
 			Id:      pb.NewIDUUID(pointID.String()),
-			Vectors: pb.NewVectors(cwe.Embedding...),
+			Vectors: pb.NewVectorsMap(vectors),
 			Payload: chunkToPayload(cwe.Chunk),
 		}
 	}
